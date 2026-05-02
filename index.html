@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>加減法挑戰 - 進階版</title>
+    <title>正負整數加減挑戰</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4A90E2">
@@ -17,13 +17,14 @@
         .card { 
             background: white; padding: 25px; border-radius: 20px; 
             display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
-            min-width: 320px; max-width: 95%;
+            min-width: 350px; max-width: 95%;
         }
+        #version-tag { font-size: 0.7rem; color: #ccc; text-align: right; margin-bottom: 5px; }
         #stats { font-size: 1rem; color: #666; margin-bottom: 10px; }
         #timer { font-size: 1.5rem; color: var(--danger); font-weight: bold; margin: 10px 0; }
-        #question { font-size: 3rem; margin: 20px 0; color: #333; min-height: 1.2em; }
+        #question { font-size: 2.5rem; margin: 20px 0; color: #333; min-height: 1.2em; font-family: 'Courier New', monospace; }
         input { 
-            font-size: 2rem; width: 120px; padding: 10px; 
+            font-size: 2rem; width: 150px; padding: 10px; 
             text-align: center; border: 2px solid #ddd; border-radius: 12px;
             outline: none;
         }
@@ -34,12 +35,16 @@
         }
         #feedback { margin-top: 15px; font-size: 1.2rem; font-weight: bold; min-height: 1.5em; }
         
-        /* 報告清單樣式 */
         #report-container { 
             margin-top: 25px; text-align: left; 
-            max-height: 300px; overflow-y: auto; 
+            max-height: 400px; overflow-y: auto; 
             border-top: 2px solid #eee; padding-top: 15px;
-            display: none; /* 初始隱藏 */
+            display: none; 
+        }
+        .report-summary {
+            background: #f8f9fa; padding: 15px; border-radius: 10px;
+            margin-bottom: 15px; border-left: 5px solid var(--primary);
+            font-weight: bold; line-height: 1.6;
         }
         .report-item { 
             display: flex; justify-content: space-between; 
@@ -48,23 +53,24 @@
         }
         .correct { color: var(--success); }
         .wrong { color: var(--danger); }
-        #high-score { margin-top: 15px; font-size: 0.9rem; color: #999; }
+        #high-score { margin-top: 15px; font-size: 0.8rem; color: #999; }
     </style>
 </head>
 <body>
 
     <div class="card">
+        <div id="version-tag">Version: 2026.05.02-v2.1 (正負數整數版)</div>
         <div id="stats">答對：<span id="correct-count">0</span> | 正確率：<span id="accuracy">0</span>%</div>
-        <div id="timer">準備挑戰？</div>
-        <div id="question">Ready?</div>
+        <div id="timer">準備好了嗎？</div>
+        <div id="question">Loading...</div>
         <input type="number" id="answer" inputmode="numeric" placeholder="?">
         <button id="submit-btn">開始挑戰 (30秒)</button>
         <div id="feedback"></div>
         <div id="high-score"></div>
 
-        <!-- 答題過程報告區域 -->
         <div id="report-container">
-            <h3 style="text-align:center; margin-top:0;">答題紀錄</h3>
+            <h3 style="text-align:center; margin-top:0;">挑戰結算報告</h3>
+            <div id="summary-text" class="report-summary"></div>
             <div id="report-list"></div>
         </div>
     </div>
@@ -81,7 +87,13 @@ num1 = num2 = ans = correct = total = 0
 is_running = False
 start_time = 0
 DURATION = 30
-history = [] # 用來存儲答題歷程
+history = []
+
+def format_num(n, is_first=False):
+    """將負數加上括號，增加數學易讀性"""
+    if n < 0 and not is_first:
+        return f"({n})"
+    return str(n)
 
 def update_ui():
     document.querySelector("#correct-count").innerText = str(correct)
@@ -89,9 +101,17 @@ def update_ui():
     document.querySelector("#accuracy").innerText = f"{acc:.0f}"
 
 def show_report():
+    # 1. 產生總結資訊
+    acc = (correct / total * 100) if total > 0 else 0
+    summary = (f"🎯 總計答題：{total} 題<br>"
+               f"✅ 答對題數：{correct} 題<br>"
+               f"❌ 答錯題數：{total - correct} 題<br>"
+               f"📈 最終正確率：{acc:.1f}%")
+    document.querySelector("#summary-text").innerHTML = summary
+
+    # 2. 產生詳細清單
     report_list = document.querySelector("#report-list")
     report_list.innerHTML = ""
-    # 將歷程由新到舊排序顯示
     for item in reversed(history):
         div = document.createElement("div")
         div.className = "report-item"
@@ -99,6 +119,7 @@ def show_report():
         icon = "✅" if item['is_correct'] else "❌"
         div.innerHTML = f"<span>{item['q']}</span> <span class='{status_class}'>{item['user_ans']} ({icon} {item['correct_ans']})</span>"
         report_list.appendChild(div)
+    
     document.querySelector("#report-container").style.display = "block"
 
 async def timer_loop():
@@ -110,13 +131,14 @@ async def timer_loop():
             is_running = False
             document.querySelector("#timer").innerText = "時間到！"
             document.querySelector("#question").innerText = "FINISH"
-            document.querySelector("#submit-btn").innerText = "重新開始"
-            # 儲存與顯示最高分
-            current_high = int(window.localStorage.getItem("math_high_score") or 0)
-            if correct > current_high:
-                window.localStorage.setItem("math_high_score", str(correct))
+            document.querySelector("#submit-btn").innerText = "重新開始挑戰"
             
-            show_report() # 結束時印出清單
+            # 儲存歷史紀錄
+            current_high = int(window.localStorage.getItem("int_math_high_score") or 0)
+            if correct > current_high:
+                window.localStorage.setItem("int_math_high_score", str(correct))
+            
+            show_report()
             break
         document.querySelector("#timer").innerText = f"剩餘時間：{remaining}s"
         await asyncio.sleep(0.5)
@@ -124,14 +146,18 @@ async def timer_loop():
 def next_question():
     global num1, num2, ans
     mode = random.choice(["+", "-"])
+    # 設定正負數範圍 (-99 到 99)
+    num1 = random.randint(-99, 99)
+    num2 = random.randint(-99, 99)
+    
     if mode == "+":
-        num1, num2 = random.randint(10, 99), random.randint(10, 99)
         ans = num1 + num2
     else:
-        num1 = random.randint(20, 99)
-        num2 = random.randint(1, num1)
         ans = num1 - num2
-    document.querySelector("#question").innerText = f"{num1} {mode} {num2} = ?"
+    
+    # 格式化顯示題目
+    q_str = f"{format_num(num1, True)} {mode} {format_num(num2)} = ?"
+    document.querySelector("#question").innerText = q_str
     document.querySelector("#answer").value = ""
     document.querySelector("#answer").focus()
 
@@ -139,13 +165,12 @@ async def handle_submit():
     global is_running, start_time, correct, total, history
     
     if not is_running:
-        # 重置並開始
         is_running = True
         correct = total = 0
         history = []
         document.querySelector("#report-container").style.display = "none"
         start_time = time.time()
-        document.querySelector("#submit-btn").innerText = "提交"
+        document.querySelector("#submit-btn").innerText = "提交答案"
         document.querySelector("#feedback").innerText = ""
         update_ui()
         next_question()
@@ -160,7 +185,6 @@ async def handle_submit():
     user_ans_int = int(user_val)
     is_correct = (user_ans_int == ans)
 
-    # 紀錄歷程
     history.append({
         "q": current_q,
         "user_ans": user_ans_int,
@@ -171,24 +195,21 @@ async def handle_submit():
     if is_correct:
         correct += 1
         document.querySelector("#feedback").style.color = "var(--success)"
-        document.querySelector("#feedback").innerText = "✅"
-        next_question()
+        document.querySelector("#feedback").innerText = "✅ 正確！"
     else:
         document.querySelector("#feedback").style.color = "var(--danger)"
-        document.querySelector("#feedback").innerText = "❌"
-        next_question() # 答錯也跳下一題，維持節奏
+        document.querySelector("#feedback").innerText = f"❌ 錯誤！(答案是 {ans})"
     
     update_ui()
+    next_question()
 
-# 監聽 Enter 鍵
 def handle_keydown(event):
     if event.key == "Enter":
-        # 使用 asyncio 調用非同步的 handle_submit
         asyncio.ensure_future(handle_submit())
 
-# 初始綁定
 document.querySelector("#submit-btn").onclick = create_proxy(lambda e: asyncio.ensure_future(handle_submit()))
 document.querySelector("#answer").onkeydown = create_proxy(handle_keydown)
+document.querySelector("#question").innerText = "準備好了嗎？"
     </script>
 
     <script>
