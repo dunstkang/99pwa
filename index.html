@@ -3,30 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>九九乘法練習器</title>
+    <title>加減法計時挑戰</title>
+    
+    <!-- PWA 核心設定 -->
     <link rel="manifest" href="manifest.json">
-    <!-- 務必包含 PyScript 的資源載入 -->
+    <meta name="theme-color" content="#4A90E2">
+
+    <!-- PyScript 穩定版資源 -->
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+
+    <style>
+        :root { --primary: #4A90E2; --danger: #e74c3c; }
+        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; padding-top: 30px; margin: 0; }
+        .card { 
+            background: white; padding: 25px; border-radius: 20px; 
+            display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+            min-width: 320px; max-width: 90%;
+        }
+        #stats { font-size: 1rem; color: #666; margin-bottom: 10px; }
+        #timer { font-size: 1.5rem; color: var(--danger); font-weight: bold; margin: 10px 0; }
+        #question { font-size: 3rem; margin: 20px 0; color: #333; min-height: 1.2em; }
+        input { 
+            font-size: 2rem; width: 120px; padding: 10px; 
+            text-align: center; border: 2px solid #ddd; border-radius: 12px;
+            outline: none; transition: border 0.3s;
+        }
+        input:focus { border-color: var(--primary); }
+        button { 
+            display: block; width: 100%; margin-top: 20px; font-size: 1.2rem; 
+            padding: 15px; cursor: pointer; background: var(--primary); 
+            color: white; border: none; border-radius: 12px; font-weight: bold;
+        }
+        #feedback { margin-top: 15px; font-size: 1.2rem; font-weight: bold; min-height: 1.5em; }
+        #high-score { margin-top: 20px; font-size: 0.9rem; color: #999; border-top: 1px dashed #ccc; padding-top: 10px; }
+    </style>
 </head>
 <body>
 
-    <!-- 您原本的 <div class="card"> 內容放在這裡 -->
     <div class="card">
-        <!-- ... -->
+        <div id="stats">答對：<span id="correct-count">0</span> | 正確率：<span id="accuracy">0</span>%</div>
+        <div id="timer">準備好了嗎？</div>
+        <div id="question">Loading...</div>
+        <input type="number" id="answer" pattern="\[0-9]*" inputmode="numeric" placeholder="?">
+        <button id="submit-btn">開始挑戰 (30秒)</button>
+        <div id="feedback"></div>
+        <div id="high-score">載入最高紀錄...</div>
     </div>
 
-    <!-- 您原本的 <script type="py"> 內容 -->
+    <!-- Python 核心邏輯 -->
     <script type="py">
-        # ... Python 代碼 ...
+from pyscript import document, window
+import random
+import asyncio
+import time
+
+# 遊戲變數
+num1 = num2 = ans = correct = total = 0
+is_running = False
+start_time = 0
+DURATION = 30 # 設定挑戰秒數
+
+def update_ui():
+    document.querySelector("#correct-count").innerText = str(correct)
+    acc = (correct / total * 100) if total > 0 else 0
+    document.querySelector("#accuracy").innerText = f"{acc:.0f}"
+
+def show_high_score():
+    high = window.localStorage.getItem("math_high_score") or "0"
+    document.querySelector("#high-score").innerText = f"歷史最高紀錄：答對 {high} 題"
+
+async def timer_loop():
+    global is_running
+    while is_running:
+        elapsed = int(time.time() - start_time)
+        remaining = DURATION - elapsed
+        if remaining <= 0:
+            is_running = False
+            document.querySelector("#timer").innerText = "時間到！"
+            document.querySelector("#question").innerText = "FINISH"
+            # 處理最高分
+            current_high = int(window.localStorage.getItem("math_high_score") or 0)
+            if correct > current_high:
+                window.localStorage.setItem("math_high_score", str(correct))
+                document.querySelector("#feedback").innerText = f"🎊 新紀錄！答對 {correct} 題"
+            else:
+                document.querySelector("#feedback").innerText = f"結束！答對 {correct} 題"
+            document.querySelector("#submit-btn").innerText = "再試一次"
+            show_high_score()
+            break
+        document.querySelector("#timer").innerText = f"剩餘時間：{remaining}s"
+        await asyncio.sleep(0.5)
+
+def next_question():
+    global num1, num2, ans
+    mode = random.choice(["+", "-"])
+    if mode == "+":
+        num1, num2 = random.randint(10, 99), random.randint(10, 99)
+        ans = num1 + num2
+    else:
+        num1 = random.randint(20, 99)
+        num2 = random.randint(1, num1) # 確保不出現負數
+        ans = num1 - num2
+    document.querySelector("#question").innerText = f"{num1} {mode} {num2} = ?"
+    document.querySelector("#answer").value = ""
+
+async def handle_click(event):
+    global is_running, start_time, correct, total
+    
+    if not is_running:
+        # 重置遊戲
+        is_running = True
+        correct = total = 0
+        start_time = time.time()
+        document.querySelector("#submit-btn").innerText = "提交"
+        document.querySelector("#feedback").innerText = ""
+        update_ui()
+        next_question()
+        await timer_loop()
+        return
+
+    # 檢查答案
+    user_val = document.querySelector("#answer").value
+    if not user_val: return
+    
+    total += 1
+    if int(user_val) == ans:
+        correct += 1
+        document.querySelector("#feedback").style.color = "#2ecc71"
+        document.querySelector("#feedback").innerText = "✅"
+        next_question()
+    else:
+        document.querySelector("#feedback").style.color = "#e74c3c"
+        document.querySelector("#feedback").innerText = "❌"
+    update_ui()
+
+# 綁定按鈕與初始顯示
+from pyodide.ffi import create_proxy
+document.querySelector("#submit-btn").onclick = create_proxy(handle_click)
+document.querySelector("#question").innerText = "Ready?"
+show_high_score()
     </script>
 
-    <!-- 註冊 Service Worker 的 JavaScript -->
+    <!-- PWA 註冊腳本 -->
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => console.log('SW registered!', reg))
-                .catch(err => console.error('SW registration failed!', err));
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('PWA 已就緒'))
+                    .catch(err => console.log('PWA 註冊失敗', err));
+            });
         }
     </script>
 </body>
