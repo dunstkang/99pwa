@@ -3,23 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>加減法計時挑戰</title>
+    <title>加減法挑戰 - 進階版</title>
     
-    <!-- PWA 核心設定 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4A90E2">
 
-    <!-- PyScript 穩定版資源 -->
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
 
     <style>
-        :root { --primary: #4A90E2; --danger: #e74c3c; }
-        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; padding-top: 30px; margin: 0; }
+        :root { --primary: #4A90E2; --danger: #e74c3c; --success: #2ecc71; }
+        body { font-family: -apple-system, sans-serif; text-align: center; background: #f0f2f5; padding: 20px; margin: 0; }
         .card { 
             background: white; padding: 25px; border-radius: 20px; 
             display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
-            min-width: 320px; max-width: 90%;
+            min-width: 320px; max-width: 95%;
         }
         #stats { font-size: 1rem; color: #666; margin-bottom: 10px; }
         #timer { font-size: 1.5rem; color: var(--danger); font-weight: bold; margin: 10px 0; }
@@ -27,51 +25,81 @@
         input { 
             font-size: 2rem; width: 120px; padding: 10px; 
             text-align: center; border: 2px solid #ddd; border-radius: 12px;
-            outline: none; transition: border 0.3s;
+            outline: none;
         }
-        input:focus { border-color: var(--primary); }
         button { 
             display: block; width: 100%; margin-top: 20px; font-size: 1.2rem; 
             padding: 15px; cursor: pointer; background: var(--primary); 
             color: white; border: none; border-radius: 12px; font-weight: bold;
         }
         #feedback { margin-top: 15px; font-size: 1.2rem; font-weight: bold; min-height: 1.5em; }
-        #high-score { margin-top: 20px; font-size: 0.9rem; color: #999; border-top: 1px dashed #ccc; padding-top: 10px; }
+        
+        /* 報告清單樣式 */
+        #report-container { 
+            margin-top: 25px; text-align: left; 
+            max-height: 300px; overflow-y: auto; 
+            border-top: 2px solid #eee; padding-top: 15px;
+            display: none; /* 初始隱藏 */
+        }
+        .report-item { 
+            display: flex; justify-content: space-between; 
+            padding: 8px 15px; border-bottom: 1px solid #f9f9f9;
+            font-family: monospace; font-size: 1.1rem;
+        }
+        .correct { color: var(--success); }
+        .wrong { color: var(--danger); }
+        #high-score { margin-top: 15px; font-size: 0.9rem; color: #999; }
     </style>
 </head>
 <body>
 
     <div class="card">
         <div id="stats">答對：<span id="correct-count">0</span> | 正確率：<span id="accuracy">0</span>%</div>
-        <div id="timer">準備好了嗎？</div>
-        <div id="question">Loading...</div>
-        <input type="number" id="answer" pattern="\[0-9]*" inputmode="numeric" placeholder="?">
+        <div id="timer">準備挑戰？</div>
+        <div id="question">Ready?</div>
+        <input type="number" id="answer" inputmode="numeric" placeholder="?">
         <button id="submit-btn">開始挑戰 (30秒)</button>
         <div id="feedback"></div>
-        <div id="high-score">載入最高紀錄...</div>
+        <div id="high-score"></div>
+
+        <!-- 答題過程報告區域 -->
+        <div id="report-container">
+            <h3 style="text-align:center; margin-top:0;">答題紀錄</h3>
+            <div id="report-list"></div>
+        </div>
     </div>
 
-    <!-- Python 核心邏輯 -->
     <script type="py">
 from pyscript import document, window
+from pyodide.ffi import create_proxy
 import random
 import asyncio
 import time
 
-# 遊戲變數
+# 全域變數
 num1 = num2 = ans = correct = total = 0
 is_running = False
 start_time = 0
-DURATION = 30 # 設定挑戰秒數
+DURATION = 30
+history = [] # 用來存儲答題歷程
 
 def update_ui():
     document.querySelector("#correct-count").innerText = str(correct)
     acc = (correct / total * 100) if total > 0 else 0
     document.querySelector("#accuracy").innerText = f"{acc:.0f}"
 
-def show_high_score():
-    high = window.localStorage.getItem("math_high_score") or "0"
-    document.querySelector("#high-score").innerText = f"歷史最高紀錄：答對 {high} 題"
+def show_report():
+    report_list = document.querySelector("#report-list")
+    report_list.innerHTML = ""
+    # 將歷程由新到舊排序顯示
+    for item in reversed(history):
+        div = document.createElement("div")
+        div.className = "report-item"
+        status_class = "correct" if item['is_correct'] else "wrong"
+        icon = "✅" if item['is_correct'] else "❌"
+        div.innerHTML = f"<span>{item['q']}</span> <span class='{status_class}'>{item['user_ans']} ({icon} {item['correct_ans']})</span>"
+        report_list.appendChild(div)
+    document.querySelector("#report-container").style.display = "block"
 
 async def timer_loop():
     global is_running
@@ -82,15 +110,13 @@ async def timer_loop():
             is_running = False
             document.querySelector("#timer").innerText = "時間到！"
             document.querySelector("#question").innerText = "FINISH"
-            # 處理最高分
+            document.querySelector("#submit-btn").innerText = "重新開始"
+            # 儲存與顯示最高分
             current_high = int(window.localStorage.getItem("math_high_score") or 0)
             if correct > current_high:
                 window.localStorage.setItem("math_high_score", str(correct))
-                document.querySelector("#feedback").innerText = f"🎊 新紀錄！答對 {correct} 題"
-            else:
-                document.querySelector("#feedback").innerText = f"結束！答對 {correct} 題"
-            document.querySelector("#submit-btn").innerText = "再試一次"
-            show_high_score()
+            
+            show_report() # 結束時印出清單
             break
         document.querySelector("#timer").innerText = f"剩餘時間：{remaining}s"
         await asyncio.sleep(0.5)
@@ -103,18 +129,21 @@ def next_question():
         ans = num1 + num2
     else:
         num1 = random.randint(20, 99)
-        num2 = random.randint(1, num1) # 確保不出現負數
+        num2 = random.randint(1, num1)
         ans = num1 - num2
     document.querySelector("#question").innerText = f"{num1} {mode} {num2} = ?"
     document.querySelector("#answer").value = ""
+    document.querySelector("#answer").focus()
 
-async def handle_click(event):
-    global is_running, start_time, correct, total
+async def handle_submit():
+    global is_running, start_time, correct, total, history
     
     if not is_running:
-        # 重置遊戲
+        # 重置並開始
         is_running = True
         correct = total = 0
+        history = []
+        document.querySelector("#report-container").style.display = "none"
         start_time = time.time()
         document.querySelector("#submit-btn").innerText = "提交"
         document.querySelector("#feedback").innerText = ""
@@ -123,35 +152,49 @@ async def handle_click(event):
         await timer_loop()
         return
 
-    # 檢查答案
     user_val = document.querySelector("#answer").value
     if not user_val: return
     
     total += 1
-    if int(user_val) == ans:
+    current_q = document.querySelector("#question").innerText.replace(" = ?", "")
+    user_ans_int = int(user_val)
+    is_correct = (user_ans_int == ans)
+
+    # 紀錄歷程
+    history.append({
+        "q": current_q,
+        "user_ans": user_ans_int,
+        "correct_ans": ans,
+        "is_correct": is_correct
+    })
+
+    if is_correct:
         correct += 1
-        document.querySelector("#feedback").style.color = "#2ecc71"
+        document.querySelector("#feedback").style.color = "var(--success)"
         document.querySelector("#feedback").innerText = "✅"
         next_question()
     else:
-        document.querySelector("#feedback").style.color = "#e74c3c"
+        document.querySelector("#feedback").style.color = "var(--danger)"
         document.querySelector("#feedback").innerText = "❌"
+        next_question() # 答錯也跳下一題，維持節奏
+    
     update_ui()
 
-# 綁定按鈕與初始顯示
-from pyodide.ffi import create_proxy
-document.querySelector("#submit-btn").onclick = create_proxy(handle_click)
-document.querySelector("#question").innerText = "Ready?"
-show_high_score()
+# 監聽 Enter 鍵
+def handle_keydown(event):
+    if event.key == "Enter":
+        # 使用 asyncio 調用非同步的 handle_submit
+        asyncio.ensure_future(handle_submit())
+
+# 初始綁定
+document.querySelector("#submit-btn").onclick = create_proxy(lambda e: asyncio.ensure_future(handle_submit()))
+document.querySelector("#answer").onkeydown = create_proxy(handle_keydown)
     </script>
 
-    <!-- PWA 註冊腳本 -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(reg => console.log('PWA 已就緒'))
-                    .catch(err => console.log('PWA 註冊失敗', err));
+                navigator.serviceWorker.register('sw.js');
             });
         }
     </script>
