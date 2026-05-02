@@ -1,14 +1,13 @@
 {
-  "name": "九九乘法練習器",
-  "short_name": "9x9練習",
-  "description": "用 Python 寫的離線數學練習工具",
+  "name": "整數加法練習器",
+  "short_name": "加法練習",
   "start_url": "index.html",
   "display": "standalone",
-  "background_color": "#f0f2f5",
-  "theme_color": "#4A90E2",
+  "background_color": "#fdfdfd",
+  "theme_color": "#3498db",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3232/3232386.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/10410/10410298.png",
       "sizes": "512x512",
       "type": "image/png"
     }
