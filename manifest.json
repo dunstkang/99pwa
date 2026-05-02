@@ -1,10 +1,11 @@
 {
-  "name": "整數加法、減法練習器",
-  "short_name": "加法、減法練習",
+  "name": "15秒整數加減挑戰賽",
+  "short_name": "加減挑戰",
+  "description": "限時 15 秒的整數運算能力測試",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#fdfdfd",
-  "theme_color": "#3498db",
+  "theme_color": "#4A90E2",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/10410/10410298.png",

@@ -3,55 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>整數加減練習器</title>
+    <title>15秒整數加減挑戰</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4A90E2">
 
-    <!-- PyScript 核心資源 -->
     <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css" />
     <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
 
     <style>
-        body { font-family: sans-serif; text-align: center; padding-top: 50px; background: #fdfdfd; }
-        .card { background: white; padding: 30px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); min-width: 320px; }
-        #question { font-size: 3rem; margin-bottom: 25px; color: #2c3e50; font-weight: bold; }
-        input { font-size: 1.8rem; width: 120px; padding: 10px; text-align: center; border: 2px solid #3498db; border-radius: 10px; outline: none; }
-        button { font-size: 1.4rem; padding: 10px 25px; margin-left: 10px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 10px; }
-        #feedback { margin-top: 25px; font-size: 1.5rem; font-weight: bold; min-height: 1.6em; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #fdfdfd; }
+        .card { background: white; padding: 25px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); min-width: 320px; vertical-align: top; }
+        #timer { font-size: 2rem; color: #e74c3c; font-weight: bold; margin-bottom: 10px; }
+        #stats { font-size: 1.1rem; color: #7f8c8d; margin-bottom: 20px; }
+        #question { font-size: 2.8rem; margin-bottom: 20px; color: #2c3e50; min-height: 1.2em; }
+        input { font-size: 1.5rem; width: 100px; padding: 10px; text-align: center; border: 2px solid #3498db; border-radius: 10px; }
+        button { font-size: 1.2rem; padding: 10px 20px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 10px; margin: 5px; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+        #results-container { margin-top: 30px; display: none; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+        .wrong { color: #e74c3c; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <div id="question">環境載入中...</div>
-        <input type="text" id="answer" inputmode="numeric" placeholder="答案" autocomplete="off">
-        <button id="submit-btn">送出</button>
+        <div id="timer">剩餘時間：--</div>
+        <div id="stats">答對：0 | 正確率：0%</div>
+        <div id="question">準備好了嗎？</div>
+        
+        <div id="game-ui" style="display:none;">
+            <input type="text" id="answer" inputmode="numeric" placeholder="答案" autocomplete="off">
+            <button id="submit-btn">送出</button>
+        </div>
+        
+        <button id="start-btn">開始挑戰 (15秒)</button>
         <div id="feedback"></div>
+    </div>
+
+    <div id="results-container">
+        <h3>挑戰結束！題目回顧：</h3>
+        <table id="results-table">
+            <thead>
+                <tr>
+                    <th>題目</th>
+                    <th>正確答案</th>
+                    <th>您的答案</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
     </div>
 
     <script type="py">
 from pyscript import document
 import random
 import asyncio
+from pyodide.ffi import create_proxy
 
+# 遊戲狀態變數
 num1 = num2 = correct_ans = 0
 op = "+"
+correct_count = 0
+total_count = 0
+game_history = []
+is_running = False
 
 def next_question():
     global num1, num2, op, correct_ans
-    # 隨機選擇數字與運算符號
-    num1 = random.randint(-50, 50)
-    num2 = random.randint(-50, 50)
+    num1, num2 = random.randint(-20, 20), random.randint(-20, 20)
     op = random.choice(["+", "-"])
+    correct_ans = (num1 + num2) if op == "+" else (num1 - num2)
     
-    # 計算正確答案
-    if op == "+":
-        correct_ans = num1 + num2
-    else:
-        correct_ans = num1 - num2
-    
-    # 格式化顯示：如果是負數就加上括號
     s1 = f"({num1})" if num1 < 0 else f"{num1}"
     s2 = f"({num2})" if num2 < 0 else f"{num2}"
     
@@ -59,32 +84,92 @@ def next_question():
     document.querySelector("#answer").value = ""
     document.querySelector("#feedback").innerText = ""
 
+async def start_game(event):
+    global correct_count, total_count, game_history, is_running
+    correct_count = total_count = 0
+    game_history = []
+    is_running = True
+    
+    # UI 切換
+    document.querySelector("#start-btn").style.display = "none"
+    document.querySelector("#game-ui").style.display = "block"
+    document.querySelector("#results-container").style.display = "none"
+    document.querySelector("#results-table tbody").innerHTML = ""
+    update_stats()
+    next_question()
+    document.querySelector("#answer").focus()
+    
+    # 倒數計時邏輯
+    for i in range(15, -1, -1):
+        document.querySelector("#timer").innerText = f"剩餘時間：{i}s"
+        if i == 0: break
+        await asyncio.sleep(1)
+    
+    end_game()
+
+def end_game():
+    global is_running
+    is_running = False
+    document.querySelector("#game-ui").style.display = "none"
+    document.querySelector("#start-btn").style.display = "inline-block"
+    document.querySelector("#start-btn").innerText = "再次挑戰"
+    document.querySelector("#question").innerText = "時間到！"
+    
+    # 顯示結果列表
+    document.querySelector("#results-container").style.display = "block"
+    tbody = document.querySelector("#results-table tbody")
+    
+    for item in game_history:
+        row = document.createElement("tr")
+        # 判斷對錯標色
+        user_ans_str = str(item['user'])
+        ans_class = "" if item['user'] == item['correct'] else "class='wrong'"
+        
+        row.innerHTML = f"<td>{item['q']}</td><td>{item['correct']}</td><td {ans_class}>{user_ans_str}</td>"
+        tbody.appendChild(row)
+
 async def check_answer(event):
+    global correct_count, total_count
+    if not is_running: return
+    
     user_input = document.querySelector("#answer").value
     if not user_input: return
     
+    total_count += 1
+    current_q = document.querySelector("#question").innerText
+    
     try:
-        if int(user_input) == correct_ans:
-            document.querySelector("#feedback").innerText = "✅ 太棒了！"
-            document.querySelector("#feedback").style.color = "#27ae60"
-            await asyncio.sleep(0.8)
-            next_question()
+        user_val = int(user_input)
+        is_correct = (user_val == correct_ans)
+        if is_correct:
+            correct_count += 1
+            document.querySelector("#feedback").innerText = "✅"
         else:
-            document.querySelector("#feedback").innerText = f"❌ 再試試看 (提示：{correct_ans})"
-            document.querySelector("#feedback").style.color = "#e74c3c"
-    except ValueError:
-        document.querySelector("#feedback").innerText = "⚠️ 請輸入有效數字"
+            document.querySelector("#feedback").innerText = "❌"
+        
+        # 記錄歷史
+        game_history.append({
+            "q": current_q,
+            "correct": correct_ans,
+            "user": user_val
+        })
+    except:
+        game_history.append({"q": current_q, "correct": correct_ans, "user": "格式錯誤"})
+    
+    update_stats()
+    next_question()
 
-from pyodide.ffi import create_proxy
+def update_stats():
+    accuracy = (correct_count / total_count * 100) if total_count > 0 else 0
+    document.querySelector("#stats").innerText = f"答對：{correct_count} | 正確率：{accuracy:.0f}%"
+
+# 綁定事件
+document.querySelector("#start-btn").onclick = create_proxy(start_game)
 document.querySelector("#submit-btn").onclick = create_proxy(check_answer)
 
-# 支援 Enter 鍵送出
 async def handle_enter(event):
-    if event.key == "Enter":
-        await check_answer(None)
+    if event.key == "Enter": await check_answer(None)
 document.querySelector("#answer").onkeypress = create_proxy(handle_enter)
-
-next_question()
     </script>
 
     <script>
