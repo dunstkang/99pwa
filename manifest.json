@@ -1,6 +1,6 @@
 {
-  "name": "整數加法練習器",
-  "short_name": "加法練習",
+  "name": "整數加法、減法練習器",
+  "short_name": "加法、減法練習",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#fdfdfd",
